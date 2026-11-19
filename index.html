@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drum Timing Coach</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121923; --line: #232d3b; --text: #e6ebf2; --dim: #7b8696;
+    --good: #34d399; --warn: #fbbf24; --bad: #f43f5e; --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  .row2 { padding-top: 8px; padding-bottom: 8px; font-size: 13px; color: var(--dim); }
+  .brand { font-weight: 700; letter-spacing: .02em; margin-right: 6px; }
+  label, .group { display: inline-flex; align-items: center; gap: 6px; }
+  button, select, input[type=number] {
+    font: inherit; color: var(--text); background: #1a2230; border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; min-height: 34px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: #3a4759; }
+  #startBtn { background: var(--accent); color: #06121f; font-weight: 700; border: none; min-width: 84px; }
+  #startBtn.running { background: var(--bad); color: #fff; }
+  #bpm { width: 64px; text-align: center; font-weight: 700; font-size: 16px; appearance: textfield; -moz-appearance: textfield; }
+  #bpm::-webkit-outer-spin-button, #bpm::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=text] {
+    font: inherit; color: var(--text); background: #1a2230; border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; min-height: 34px; width: 180px;
+  }
+  #songSelect { max-width: 260px; }
+  .pct { min-width: 3.2em; color: var(--text); font-variant-numeric: tabular-nums; }
+  .sep { width: 1px; align-self: stretch; background: var(--line); }
+  .bpm button { width: 34px; padding: 0; }
+  #latency.warn { color: var(--warn); }
+  .linkish { background: none; border: none; color: var(--dim); text-decoration: underline; padding: 0 4px; min-height: 0; }
+  input[type=range] { width: 110px; accent-color: var(--accent); }
+  .meter { position: relative; width: 120px; height: 8px; background: #1a2230; border-radius: 4px; overflow: hidden; }
+  #meterFill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--good); transition: width 40ms linear; }
+  #meterThresh { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--warn); }
+  main { position: relative; flex: 1; min-height: 320px; }
+  #stage { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: manipulation; }
+  .hint {
+    position: absolute; left: 0; right: 0; top: 60%; text-align: center; padding: 0 16px;
+    font-weight: 800; font-size: clamp(20px, 4.2vw, 46px); color: var(--dim); pointer-events: none;
+  }
+  .hint[data-state=good] { color: var(--good); }
+  .hint[data-state=warn] { color: var(--warn); }
+  .hint[data-state=bad], .hint[data-state=lost] { color: var(--bad); }
+  .hint[data-state=calib] { color: var(--accent); font-size: clamp(16px, 2.6vw, 28px); }
+  #toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 20px); opacity: 0;
+    background: #1f2937; border: 1px solid var(--line); padding: 10px 16px; border-radius: 10px;
+    max-width: calc(100% - 32px); transition: all .2s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="brand">Timing Coach</span>
+    <button id="startBtn">Start</button>
+    <span class="group bpm">
+      <button id="bpmDown" aria-label="Slower">−</button>
+      <input id="bpm" type="number" min="30" max="300" step="1" aria-label="BPM">
+      <button id="bpmUp" aria-label="Faster">+</button>
+      <span>BPM</span>
+    </span>
+    <label>Grid
+      <select id="subdiv">
+        <option value="1">Quarter notes</option>
+        <option value="2">8th notes</option>
+        <option value="4">16th notes</option>
+      </select>
+    </label>
+    <label>Beats/bar
+      <select id="beats">
+        <option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option>
+      </select>
+    </label>
+    <label>Input
+      <select id="inputMode">
+        <option value="mic">Microphone</option>
+        <option value="tap">Keyboard / tap</option>
+      </select>
+    </label>
+    <button id="calibBtn">Calibrate</button>
+    <span id="latency"></span><button id="resetLatency" class="linkish">reset</button>
+  </header>
+  <header class="row2">
+    <span id="micRow" class="group">
+      <label>Mic <select id="device"><option value="">Default</option></select></label>
+      <label>Sensitivity <input id="sens" type="range" min="0" max="100"></label>
+      <span class="meter" title="Input level (yellow line = hit threshold)"><span id="meterFill"></span><span id="meterThresh"></span></span>
+    </span>
+    <label>Click sound <select id="clickSound" aria-label="Click sound"></select></label>
+    <label>Click volume <input id="clickVol" type="range" min="0" max="200" step="5"> <span id="clickVolPct" class="pct"></span></label>
+    <label><input id="flip" type="checkbox"> Show "ahead" on the left</label>
+  </header>
+  <header class="row2">
+    <label>Songs
+      <select id="songSelect" aria-label="Saved songs"></select>
+    </label>
+    <button id="songDelete" disabled>Delete</button>
+    <span class="sep"></span>
+    <input id="songTitle" type="text" placeholder="Song title" maxlength="80" aria-label="Song title">
+    <button id="songSave">Save 120 BPM</button>
+  </header>
+  <main>
+    <canvas id="stage"></canvas>
+    <div id="hint" class="hint" data-state="idle">Press Start</div>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
